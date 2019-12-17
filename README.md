@@ -1,11 +1,3 @@
-# libgomp #
+# ULMT-based implementation of the GNU OpenMP runtime
 
-This project provides an additional feature to the GOMP implementation of OpenMP,
-that is the possibility to enable ULT as a means of handling the tasks in a separate
-execution-context.
-
-The GOMP project has developed an implementation of OpenMP for the C, C++, and Fortran
-compilers in the GNU Compiler Collection and is further improving it. As part of the
-GNU Project, GOMP simplifies parallel programming for all GNU system variants.
-This effort operates in an open environment to attract developers and ensure
-applicability across multiple architectures and applications.
+This project provides an implementation of OpenMP for the C, C++, and Fortran compilers in the GNU Compiler Collection which is based on the newest User-Level-Micro-Thread (ULMT) technology. In more detail, this solution extends the GNU OpenMP (GOMP) runtime with newer facilities that are aimed to support ULMT-based execution of tasks. This is still in accord with the tasking-model described in the OpenMP specification 4.5.
