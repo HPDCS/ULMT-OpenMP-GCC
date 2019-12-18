@@ -39,15 +39,19 @@ Differently the following command will run your OpenMP program with the ULMT ver
 
 ### Environment Variables
 
-> * OMP_AUTO_CUTOFF=[**true**|false]
+* OMP_AUTO_CUTOFF=[**true**|false]
 > > This variable allows to emable or to disable the basic *task throttling* heuristic provided by GOMP. The default value is *true*. Nevertheless, we strongly reccomend to disable it as it is proved to be harmful [1] for some application classes.
->
-> * OMP_UNTIED_BLOCK=[**true**|false]
-> * OMP_ULT_THREADS=[true|**false**]
-> * OMP_ULT_STACK=[**512K**]
-> * OMP_AUTO_CUTOFF=[**true**|false]
-> * OMP_IBS_RATE=[**0**]
-> * OMP_QUEUE_POLICY=[0x**FFFF0F**]
+
+* OMP_UNTIED_BLOCK=[**true**|false]
+> > This variables mitigate the aggressive behaviour through which the scheduler context-switch ULMT-based tasks. The default value is *true*. Do not change it unless you experience slow-downs that are deemed to be caused by a too conservative behaviour of the scheduler.
+
+* OMP_ULT_THREADS=[true|**false**]
+> Allows to enable all the capabilities that the ULMT version of GOMP provides. Differently, the original version of GOMP will be used which is also the default configuration.
+
+* OMP_ULT_STACK=[**512K**]
+* OMP_AUTO_CUTOFF=[**true**|false]
+* OMP_IBS_RATE=[**0**]
+* OMP_QUEUE_POLICY=[0x**FFFF0F**]
 
 
 <sub>
