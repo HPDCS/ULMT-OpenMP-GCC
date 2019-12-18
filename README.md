@@ -63,37 +63,59 @@ Differently the following command will run your OpenMP program with the ULMT ver
 
 ### Execution Environment Routines
 
-* int omp_get_autocutoff (void)
+```c
+int omp_get_autocutoff (void)
+```
 > Returns current value of OMP_AUTO_CUTOFF.
 
-* int omp_get_untied_block (void)
+```c
+int omp_get_untied_block (void)
+```
 > Returns current value of OMP_UNTIED_BLOCK.
 
-* void omp_set_untied_block (int val)
+```c
+void omp_set_untied_block (int val)
+```
 > Sets value of OMP_UNTIED_BLOCK to *val*.
 
-* int omp_get_ult_threads (void)
+```c
+int omp_get_ult_threads (void)
+```
 > Returns current value of OMP_ULT_THREADS.
 
-* void omp_set_ult_threads (int val)
+```c
+void omp_set_ult_threads (int val)
+```
 > Called just prior to create a parallel region, it sets OMP_ULT_THREADS to *val* and enables ULMT.
 
-* unsigned long omp_get_ult_stack (void)
+```c
+unsigned long omp_get_ult_stack (void)
+```
 > Returns current value of OMP_ULT_STACK.
 
-* void omp_set_ult_stack (unsigned long val)
+```c
+void omp_set_ult_stack (unsigned long val)
+```
 > Called just prior to create a parallel region, it sets OMP_ULT_STACK to *val*.
 
-* int omp_get_ibs_rate (void)
+```c
+int omp_get_ibs_rate (void)
+```
 > Returns current value of OMP_IBS_RATE.
 
-* void omp_set_ibs_rate (unsigned long val)
+```c
+void omp_set_ibs_rate (unsigned long val)
+```
 > Called just prior to create a parallel region, it sets OMP_IBS_RATE to *val* and enables the IBS-interrupt support.
 
-* int omp_get_queue_policy (void)
+```c
+int omp_get_queue_policy (void)
+```
 > Returns current value of OMP_QUEUE_POLICY.
 
-* void omp_set_queue_policy (unsigned long val)
+```c
+void omp_set_queue_policy (unsigned long val)
+```
 > Sets value OMP_QUEUE_POLICY to *val*.
 
 
