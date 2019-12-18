@@ -69,9 +69,11 @@ Differently the following command will run your OpenMP program with the ULMT ver
 <sub>
 [1] M. A. Serrano, A. Melani, R. Vargas, A. Marongiu, M. Bertogna, and E. Quinones, “Timing characterization of openmp4 tasking model”, in 2015 International Conference on Compilers, Architecture and Synthesis for Embedded Systems, CASES 2015, Amsterdam, The Netherlands, October 4-9, 2015, 2015, pp. 157–166.
 </sub>
+
 <sub>
 [2] J. Sun, N. Guan, Y. Wang, Q. He, and W. Yi, “Real-time scheduling and analysis of openmp task systems with tied tasks”, in 2017 IEEE Real-Time Systems Symposium, RTSS 2017, Paris, France, December 5-8, 2017, 2017, pp. 92–103.
 </sub>
+
 <sub>
 [3] T. Gautier, C. Perez, and J. Richard, “On the impact of openmp task granularity”, in Evolving OpenMP for Evolving Architectures - 14th International Workshop on OpenMP, IWOMP 2018, Barcelona, Spain, September 26-28, 2018, Proceedings, 2018, pp. 205–221.
 </sub>
