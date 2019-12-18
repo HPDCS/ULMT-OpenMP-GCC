@@ -6,6 +6,9 @@ ULMT differs from the classical *user-level-thread* (ULT) technology in that it 
 
 The revised design of the GOMP runtime, along with the support provided by dedicated hardware, allows to achieve 1) proompt switch to any higher priority task that is scheduled while a thread is processing a lower priority one and, 2) the avoidaince of thread blocking phases caused by dependencies across tasks (*currently occurs in `taskwait`, entering in `critical` sections and attempting acquisition of `omp_lock` with the native GOMP runtime*) that have been bound to different threads. This version of the runtime, instead, avoids thread blocking phases by giving control to the task scheduling routine that looks for pending tasks, waiting to be executed, always respecting the *task-scheduling-constraints* (TSC) imposed by the OpenMP specification for `tied` and `untied` tasks.
 
+
+## Compilation and installation
+
 To compile the ULMT version of GOMP runtime download first the <a href="https://ftp.gnu.org/gnu/gcc/gcc-7.2.0/gcc-7.2.0.tar.gz">GCC 7.2.0</a> archive in the preferred path, extract it and substitute the **libgomp** folder with the one provided by this GitHub repository. This includes new sources and different Makefile to generate the ULMT version of the GOMP shared library against which you'll compile your OpenMP programs. Then, from the folder where you have previously extracted the archive, launch the following commands.
 
 ```sh
@@ -34,6 +37,7 @@ Differently the following command will run your OpenMP program with the ULMT ver
 ```sh
 >  OMP_IBS_RATE=110000 OMP_ULT_THREADS=true OMP_ULT_STACK=128K ./omp-prog
 ```
+
 
 ## Synopsis
 
