@@ -56,15 +56,48 @@ Differently the following command will run your OpenMP program with the ULMT ver
 > It works in combination with OMP_ULT_THREADS and it's used to set the stack size that each task. Default value is 512 KB.
 
 * OMP_IBS_RATE=[**0**]
-> It works in combination with OMP_ULT_THREADS and it's used to enable IBS-interrupt support on AMD machine. It requires the IBS-module would have been installed. Conversely the default value is 0, meanng no IBS-interrupt support will be used.
+> It works in combination with OMP_ULT_THREADS and it's used to enable IBS-interrupt support on AMD machine by passing the interrupt time interval value expressed as number of clocks. It requires the IBS-module would have been installed. Conversely the default value is 0, meanng no IBS-interrupt support will be used.
 
 * OMP_QUEUE_POLICY=[0x**FFFF0F**]
 > For an exhaustive explaination of the values that can be assigned to this variable we reccomend you to read comments placed inline in the header *task.h*. Do not change this value unless you know what you are doing.
 
 ### Execution Environment Routines
 
-* AAA
+* int omp_get_autocutoff (void)
+> Returns current value of OMP_AUTO_CUTOFF.
 
+* int omp_get_untied_block (void)
+> Returns current value of OMP_UNTIED_BLOCK.
+
+* void omp_set_untied_block (int val)
+> Sets value of OMP_UNTIED_BLOCK to *val*.
+
+* int omp_get_ult_threads (void)
+> Returns current value of OMP_ULT_THREADS.
+
+* void omp_set_ult_threads (int val)
+> Called just prior to create a parallel region, it sets OMP_ULT_THREADS to *val* and enables ULMT.
+
+* unsigned long omp_get_ult_stack (void)
+> Returns current value of OMP_ULT_STACK.
+
+* void omp_set_ult_stack (unsigned long val)
+> Called just prior to create a parallel region, it sets OMP_ULT_STACK to *val*.
+
+* int omp_get_ibs_rate (void)
+> Returns current value of OMP_IBS_RATE.
+
+* void omp_set_ibs_rate (unsigned long val)
+> Called just prior to create a parallel region, it sets OMP_IBS_RATE to *val* and enables the IBS-interrupt support.
+
+* int omp_get_queue_policy (void)
+> Returns current value of OMP_QUEUE_POLICY.
+
+* void omp_set_queue_policy (unsigned long val)
+> Sets value OMP_QUEUE_POLICY to *val*.
+
+
+## References
 
 <p><sub>
 [1] M. A. Serrano, A. Melani, R. Vargas, A. Marongiu, M. Bertogna, and E. Quinones, “Timing characterization of openmp4 tasking model”, in 2015 International Conference on Compilers, Architecture and Synthesis for Embedded Systems, CASES 2015, Amsterdam, The Netherlands, October 4-9, 2015, 2015, pp. 157–166.
