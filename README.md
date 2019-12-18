@@ -41,25 +41,37 @@ Differently the following command will run your OpenMP program with the ULMT ver
 
 ## Synopsis
 
+
 ### Environment Variables
 
-* OMP_AUTO_CUTOFF=[**true**|false]
+OMP_AUTO_CUTOFF=[**true**|false]
 > This variable allows to emable or to disable the basic *task throttling* heuristic provided by GOMP. The default value is *true*. Nevertheless, we strongly reccomend to disable it as it is proved to be harmful [3] for some application classes.
 
-* OMP_UNTIED_BLOCK=[**true**|false]
+<br>
+
+OMP_UNTIED_BLOCK=[**true**|false]
 > This variables mitigate the aggressive behaviour through which the scheduler context-switch ULMT-based tasks. The default value is *true*. Do not change it unless you experience slow-downs that are deemed to be caused by a too conservative behaviour of the scheduler.
 
-* OMP_ULT_THREADS=[true|**false**]
+<br>
+
+OMP_ULT_THREADS=[true|**false**]
 > Allows to enable all the capabilities that the ULMT version of GOMP provides. Differently, the original version of GOMP will be used which is also the default configuration.
 
-* OMP_ULT_STACK=[**512K**]
+<br>
+
+OMP_ULT_STACK=[**512K**]
 > It works in combination with OMP_ULT_THREADS and it's used to set the stack size that each task. Default value is 512 KB.
 
-* OMP_IBS_RATE=[**0**]
+<br>
+
+OMP_IBS_RATE=[**0**]
 > It works in combination with OMP_ULT_THREADS and it's used to enable IBS-interrupt support on AMD machine by passing the interrupt time interval value expressed as number of clocks. It requires the IBS-module would have been installed. Conversely the default value is 0, meanng no IBS-interrupt support will be used.
 
-* OMP_QUEUE_POLICY=[0x**FFFF0F**]
+<br>
+
+OMP_QUEUE_POLICY=[0x**FFFF0F**]
 > For an exhaustive explaination of the values that can be assigned to this variable we reccomend you to read comments placed inline in the header *task.h*. Do not change this value unless you know what you are doing.
+
 
 ### Execution Environment Routines
 
@@ -68,50 +80,70 @@ int omp_get_autocutoff (void)
 ```
 > Returns current value of OMP_AUTO_CUTOFF.
 
+<br>
+
 ```c
 int omp_get_untied_block (void)
 ```
 > Returns current value of OMP_UNTIED_BLOCK.
+
+<br>
 
 ```c
 void omp_set_untied_block (int val)
 ```
 > Sets value of OMP_UNTIED_BLOCK to *val*.
 
+<br>
+
 ```c
 int omp_get_ult_threads (void)
 ```
 > Returns current value of OMP_ULT_THREADS.
+
+<br>
 
 ```c
 void omp_set_ult_threads (int val)
 ```
 > Called just prior to create a parallel region, it sets OMP_ULT_THREADS to *val* and enables ULMT.
 
+<br>
+
 ```c
 unsigned long omp_get_ult_stack (void)
 ```
 > Returns current value of OMP_ULT_STACK.
+
+<br>
 
 ```c
 void omp_set_ult_stack (unsigned long val)
 ```
 > Called just prior to create a parallel region, it sets OMP_ULT_STACK to *val*.
 
+<br>
+
 ```c
 int omp_get_ibs_rate (void)
 ```
 > Returns current value of OMP_IBS_RATE.
+
+<br>
 
 ```c
 void omp_set_ibs_rate (unsigned long val)
 ```
 > Called just prior to create a parallel region, it sets OMP_IBS_RATE to *val* and enables the IBS-interrupt support.
 
+<br>
+
 ```c
 int omp_get_queue_policy (void)
 ```
 > Returns current value of OMP_QUEUE_POLICY.
+
+<br>
 
 ```c
 void omp_set_queue_policy (unsigned long val)
