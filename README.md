@@ -40,8 +40,8 @@ Differently the following command will run your OpenMP program with the ULMT ver
 ### Environment Variables
 
 > * OMP_AUTO_CUTOFF=[**true**|false]
->> This variable allows to emable or to disable the basic *task throttling* heuristic provided by GOMP. The default value is *true*. Nevertheless, we strongly reccomend to disable it as it is proved to be harmful [1] for some application classes.
-
+> > This variable allows to emable or to disable the basic *task throttling* heuristic provided by GOMP. The default value is *true*. Nevertheless, we strongly reccomend to disable it as it is proved to be harmful [1] for some application classes.
+>
 > * OMP_UNTIED_BLOCK=[**true**|false]
 > * OMP_ULT_THREADS=[true|**false**]
 > * OMP_ULT_STACK=[**512K**]
@@ -50,4 +50,6 @@ Differently the following command will run your OpenMP program with the ULMT ver
 > * OMP_QUEUE_POLICY=[0x**FFFF0F**]
 
 
-[1]. T. Gautier, C. P´erez, and J. Richard, “On the impact of openmp task granularity,” in Evolving OpenMP for Evolving Architectures - 14th International Workshop on OpenMP, IWOMP 2018, Barcelona, Spain, September 26-28, 2018, Proceedings, 2018, pp. 205–221.
+<sub>
+[1] T. Gautier, C. P´erez, and J. Richard, “On the impact of openmp task granularity,” in Evolving OpenMP for Evolving Architectures - 14th International Workshop on OpenMP, IWOMP 2018, Barcelona, Spain, September 26-28, 2018, Proceedings, 2018, pp. 205–221.
+</sub>
