@@ -88,6 +88,7 @@ gomp_init_task (struct gomp_task *task, struct gomp_task *parent_task,
   task->creation_time = 0ULL;
   task->completion_time = 0ULL;
 #endif
+  task->state = NULL;
   task->suspending_thread = NULL;
   task->in_tied_task = false;
   task->is_blocked = false;
