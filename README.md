@@ -1,10 +1,10 @@
 # ULMT-based implementation of the GNU OpenMP runtime
 
-This project provides an implementation of OpenMP for the C, C++, and Fortran compilers in the GNU Compiler Collection that relies on the newest *User-Level-Micro-Thread* (ULMT) technology, which allows for effective management of tasks and their priorities. In more detail, this solution extends the GNU OpenMP (GOMP) runtime with newer facilities that are aimed to support ULMT-based execution of tasks still in accord with the tasking-model presented in the <a href="https://www.openmp.org/wp-content/uploads/openmp-4.5.pdf">OpenMP specification 4.5</a>.
+This project provides an implementation of OpenMP for the C, C++, and Fortran compilers in the GNU Compiler Collection that relies on the newest *User-Level-Micro-Thread* (ULMT) technology, which allows for effective management of tasks and their priorities. More in detail, this solution extends the GNU OpenMP (GOMP) runtime with newer facilities that are aimed to support ULMT-based execution of tasks still in accord with the specification of the OpenMP tasking-model presented in the <a href="https://www.openmp.org/wp-content/uploads/openmp-4.5.pdf">OpenMP specification 4.5</a>.
 
-ULMT differs from the classical *user-level-thread* (ULT) technology in that it allows to switch execution of tasks at arbitrary points in time. This is possible by making tasks capable of sliding out from the *control-flow-graph* (CFG) provided for the application at compile time, whereas the asychronous variation of the thread program flow is obtained through dedicated hardware support, *e.g.* the <a href="https://github.com/HPDCS/IBS-Support-ULMT">IBS-interrupt support</a>), which is a kernel module for Linux OS that provides the capability to perform *control-flow-variation* (CFV) of threads managed by the operating system upon the occurrence of *instruction-based-sampling* interrupts.
+ULMT differs from the classical *user-level-thread* (ULT) technology in that it allows to switch execution of tasks at arbitrary points in time. This is possible by making tasks capable of sliding out from the *control-flow-graph* (CFG) provided for the application at compile time, whereas the asychronous variation of the thread program flow is obtained through dedicated hardware support, *e.g.* the <a href="https://github.com/HPDCS/IBS-Support-ULMT">IBS-interrupt support</a>). The latter is a kernel module for Linux OS that provides to programs the capability to perform *control-flow-variation* (CFV) of threads managed by the operating system upon the occurrence of *instruction-based-sampling* (IBS) interrupts.
 
-The revised design of the GOMP runtime, along with the support provided by dedicated hardware, allows to achieve 1) proompt switch to any higher priority task that is scheduled while a thread is processing a lower priority one and, 2) the avoidaince of thread blocking phases caused by dependencies across tasks (*currently occurs in `taskwait`, entering in `critical` sections and attempting acquisition of `omp_lock` with the native GOMP runtime*) that have been bound to different threads. This version of the runtime, instead, avoids thread blocking phases by giving control to the task scheduling function that looks for pending tasks always respecting the *task-scheduling-constraints* (TSC) imposed by the OpenMP specification for `tied` and `untied` tasks. Under the conditions for which TSCs do not prevent the scheduler from pick pending tasks, the execution model implements a *work-conserving* policy [1,2] that the ULMT version of GOMP runtime is capable to exploit (this does not happen with the original runtime).
+The revised design of the GOMP runtime, along with the support provided by dedicated hardware, allows to achieve 1) proompt switch to any higher priority task that is scheduled while a thread is processing a lower priority one and, 2) the avoidaince of thread blocking phases caused by dependencies across tasks (*currently occurs in `taskwait`, entering in `critical` sections and attempting acquisition of `omp_lock` with the native GOMP runtime*) that have been bound to different threads. Both of the above points were not feasible in the original version of GNU OpenMP. This version of the runtime, instead, avoids thread blocking phases by giving control to the task scheduling function that looks for pending tasks always respecting the *task-scheduling-constraints* (TSC) imposed by the OpenMP specification for `tied` and `untied` tasks. Under the conditions for which TSCs do not prevent the scheduler from pick pending tasks, the execution model implements a *work-conserving* policy that the ULMT version of GOMP runtime is capable to exploit (this does not happen with the original one).
 
 
 ## Compilation and installation
@@ -45,7 +45,7 @@ Differently the following command will run your OpenMP program with the ULMT ver
 ### Environment Variables
 
 OMP_AUTO_CUTOFF=[**true**|false]
-> This variable allows to emable or to disable the basic *task throttling* heuristic provided by GOMP. The default value is *true*. Nevertheless, we strongly reccomend to disable it as it is proved to be harmful [3] for some application classes.
+> This variable allows to emable or to disable the basic *task throttling* heuristic provided by GOMP. The default value is *true*. Nevertheless, we strongly reccomend to disable it as it is proved to be harmful for some application classes.
 
 <br>
 
@@ -149,18 +149,3 @@ int omp_get_queue_policy (void)
 void omp_set_queue_policy (unsigned long val)
 ```
 > Sets value OMP_QUEUE_POLICY to *val*.
-
-
-## References
-
-<p><sub>
-[1] M. A. Serrano, A. Melani, R. Vargas, A. Marongiu, M. Bertogna, and E. Quinones, “Timing characterization of openmp4 tasking model”, in 2015 International Conference on Compilers, Architecture and Synthesis for Embedded Systems, CASES 2015, Amsterdam, The Netherlands, October 4-9, 2015, 2015, pp. 157–166.
-</sub></p>
-
-<p><sub>
-[2] J. Sun, N. Guan, Y. Wang, Q. He, and W. Yi, “Real-time scheduling and analysis of openmp task systems with tied tasks”, in 2017 IEEE Real-Time Systems Symposium, RTSS 2017, Paris, France, December 5-8, 2017, 2017, pp. 92–103.
-</sub></p>
-
-<p><sub>
-[3] T. Gautier, C. Perez, and J. Richard, “On the impact of openmp task granularity”, in Evolving OpenMP for Evolving Architectures - 14th International Workshop on OpenMP, IWOMP 2018, Barcelona, Spain, September 26-28, 2018, Proceedings, 2018, pp. 205–221.
-</sub></p>
