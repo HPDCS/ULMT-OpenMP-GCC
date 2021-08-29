@@ -138,7 +138,13 @@ extern int omp_in_final (void) __GOMP_NOTHROW;
 
 extern int omp_get_cancellation (void) __GOMP_NOTHROW;
 extern int omp_get_autocutoff (void) __GOMP_NOTHROW;
-extern void omp_set_ibs_rate (unsigned long) __GOMP_NOTHROW;
+extern int omp_get_signal_unblock (void) __GOMP_NOTHROW;
+extern int omp_get_ipi (void) __GOMP_NOTHROW;
+extern double omp_get_ipi_decision_model (void) __GOMP_NOTHROW;
+extern void omp_set_ipi_priority_gap (unsigned long) __GOMP_NOTHROW;
+extern int omp_get_ipi_priority_gap (void) __GOMP_NOTHROW;
+extern void omp_set_ipi_sending_cap (unsigned long) __GOMP_NOTHROW;
+extern int omp_get_ipi_sending_cap (void) __GOMP_NOTHROW;
 extern int omp_get_ibs_rate (void) __GOMP_NOTHROW;
 extern void omp_set_queue_policy (unsigned long) __GOMP_NOTHROW;
 extern int omp_get_queue_policy (void) __GOMP_NOTHROW;

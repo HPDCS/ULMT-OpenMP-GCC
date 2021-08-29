@@ -17,11 +17,31 @@ gomp_interrupt_trampoline:
 	# save RBX
 	pushq		%rbx
 
+	# new stack-frame creation
+	# above the old stack-pointer
+	movq		32(%rsp), %rax
+	subq		$32, %rax
+
+	# copy content of the alternate-
+	# stack into the new stack-frame
+	movq		(%rsp), %rbx
+	movq		%rbx, (%rax)
+	movq		8(%rsp), %rbx
+	movq		%rbx, 8(%rax)
+	movq		16(%rsp), %rbx
+	movq		%rbx, 16(%rax)
+	movq		24(%rsp), %rbx
+	movq		%rbx, 24(%rax)
+
+	# stack-switch occurs here
+	movq		%rax, %rsp
+
 	# %rax <-- &gomp_global_sfo
 	leaq		gomp_global_sfo(%rip), %rax
 	# %rbx <-- &gomp_tls_data
-	movq		$0x0, %rbx
-	movq		%gs:(%rbx), %rbx
+	movq		%fs:0, %rbx
+	addq		gomp_tls_ptr@gottpoff(%rip), %rbx
+	movq		(%rbx), %rbx
 	
 	# save RCX
 	pushq		%rcx
@@ -108,8 +128,9 @@ gomp_interrupt_trampoline:
 	# %rax <-- &gomp_global_sfo
 	leaq		gomp_global_sfo(%rip), %rax
 	# %rbx <-- &gomp_tls_data
-	movq		$0x0, %rbx
-	movq		%gs:(%rbx), %rbx
+	movq		%fs:0, %rbx
+	addq		gomp_tls_ptr@gottpoff(%rip), %rbx
+	movq		(%rbx), %rbx
 
 	# %rdi <- (&gomp_global_sfo)->in_thread_task_offset
 	movq		16(%rax), %rdi
@@ -143,8 +164,9 @@ gomp_interrupt_trampoline:
 	# %rax <-- &gomp_global_sfo
 	leaq		gomp_global_sfo(%rip), %rax
 	# %rbx <-- &gomp_tls_data
-	movq		$0x0, %rbx
-	movq		%gs:(%rbx), %rbx
+	movq		%fs:0, %rbx
+	addq		gomp_tls_ptr@gottpoff(%rip), %rbx
+	movq		(%rbx), %rbx
 
 	# %rdi <- (&gomp_global_sfo)->in_thread_task_offset
 	movq		16(%rax), %rdi

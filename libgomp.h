@@ -61,7 +61,7 @@
 #define _LIBGOMP_TASK_SWITCH_AUDITING_ 1
 /* Define to 1 to monitor ULT-based task-switches that occur
    in place of the BASELINE function calls.  */
-#define _LIBGOMP_IN_FLOW_TASK_SWITCH_AUDITING_ 1
+#define _LIBGOMP_IN_FLOW_TASK_SWITCH_AUDITING_ 0
 #endif
 
 #ifndef _LIBGOMP_LIBGOMP_TIMING_
@@ -86,10 +86,10 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 
 #if _LIBGOMP_TEAM_TIMING_ || _LIBGOMP_TASK_TIMING_ || _LIBGOMP_TASK_GRANULARITY_ || \
       _LIBGOMP_TASK_SWITCH_AUDITING_ || _LIBGOMP_LIBGOMP_TIMING_ || _LIBGOMP_TEAM_LOCK_TIMING_
-#include <string.h>
 #include <stdio.h>
 #include <time.h>
 #endif
@@ -164,11 +164,9 @@ enum gomp_task_type
   /* Tied Task, as it has been labeled by the programmer.  */
   GOMP_TASK_TYPE_TIED,
   /* Untied Task, as it has been labeled by the programmer.  */
-  GOMP_TASK_TYPE_UNTIED
-  
-#if _LIBGOMP_TASK_TIMING_
-  , GOMP_TASK_TYPE_ENUM_SIZE
-#endif
+  GOMP_TASK_TYPE_UNTIED,
+  /* The number of task types that are usable at run-time. */
+  GOMP_TASK_TYPE_ENUM_SIZE
 };
 
 enum gomp_task_kind
@@ -187,11 +185,9 @@ enum gomp_task_kind
      but not yet completed.  Once that completes, they will be readded
      into the queues as GOMP_TASK_WAITING in order to perform the var
      unmapping.  */
-  GOMP_TASK_ASYNC_RUNNING
-
-#if _LIBGOMP_TASK_TIMING_
-  , GOMP_TASK_KIND_ENUM_SIZE
-#endif
+  GOMP_TASK_ASYNC_RUNNING,
+  /* The number of task kinds that are usable at run-time. */
+  GOMP_TASK_KIND_ENUM_SIZE
 
 #if defined HAVE_TLS || defined USE_EMUTLS
   , GOMP_TASK_KIND_ENUM_PAD = 0x7fffffff
@@ -398,9 +394,20 @@ struct gomp_team_state
      pinned to, and it's needed to retrieve the ID of the IBS device
      where this thread is also registered. */
   int core_id;
+  /* This variable points to the initial address of an alternate-stack
+     memory area which is required to safely perform control-flow-
+     variation upon the occurrence of a programmed interrupt. It represents
+     a memory mapped landing area that can never lead to page-fault. */
+  void * alt_stack;
+  /* It representes the amount of bytes that the alternate-stack memory
+     area must be composed of. */
+  unsigned long alt_stack_size;
   /* This is the file descriptor associated to the IBS device once
      it has been opened by the current thread. */
   int ibs_fd;
+  /* This is the file descriptor associated to the IPI device once
+     it has been opened by the current thread. */
+  int ipi_fd;
 #endif
 
   /* Nesting level.  */
@@ -488,6 +495,11 @@ extern gomp_mutex_t gomp_managed_threads_lock;
 extern unsigned long gomp_max_active_levels_var;
 extern bool gomp_cancel_var;
 extern bool gomp_auto_cutoff_var;
+extern bool gomp_signal_unblock;
+extern bool gomp_ipi_var;
+extern double gomp_ipi_decision_model;
+extern unsigned long gomp_ipi_priority_gap;
+extern unsigned long gomp_ipi_sending_cap;
 extern unsigned long gomp_ibs_rate_var;
 extern unsigned long gomp_queue_policy_var;
 extern int gomp_max_task_priority_var;
@@ -507,9 +519,7 @@ extern char *goacc_device_type;
 #include "team-timing.h"
 #endif
 
-#if _LIBGOMP_TASK_TIMING_
 #include "task-timing.h"
-#endif
 
 #if _LIBGOMP_TASK_GRANULARITY_
 #include "task-granularity.h"
@@ -591,10 +601,8 @@ struct gomp_task
   /* Priority of this task.  */
   int priority;
 
-#if _LIBGOMP_TASK_TIMING_
   uint64_t creation_time;
   uint64_t completion_time;
-#endif
 
 #if _LIBGOMP_TASK_GRANULARITY_
   uint64_t stage_start;
@@ -718,9 +726,7 @@ struct gomp_team
   struct gomp_team_time team_time;
 #endif
 
-#if _LIBGOMP_TASK_TIMING_
   struct gomp_task_time_table **prio_task_time;
-#endif
 
 #if _LIBGOMP_TASK_GRANULARITY_
   struct gomp_task_granularity_table **task_granularity_table;
@@ -807,10 +813,6 @@ struct gomp_team
 
 struct gomp_thread
 {
-  /* This variable points to the gomp_tls_data structure it belongs to.
-     DO NOT MOVE IT FROM THE FIRST POSITION!  */
-  void *me;
-
   /* This is the function that the thread should run upon launch.  */
   void (*fn) (void *data);
   void *data;
@@ -847,6 +849,15 @@ struct gomp_thread
      task switch is occurred.  */
   bool hold_team_lock;
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+  /* Indicate whether this thread is currently executing any
+     function that belongs to the GOMP library. It is used to
+     filter out all those threads that potentially would receive
+     IPIs from concurrent ones but they don't relly need it in
+     that they are not busy in doing tasks for the application.  */
+  bool in_libgomp;
+#endif
+
   /* Indicate whether this thread is currently set as non
      preemptable. It is used to avoid eventual task-switch
      when, for instance, the task is executing within a
@@ -860,9 +871,7 @@ struct gomp_thread
      to any place.  */
   unsigned int place;
 
-#if _LIBGOMP_TASK_TIMING_
   struct gomp_task_time_table *prio_task_time;
-#endif
 
 #if _LIBGOMP_TASK_GRANULARITY_
   struct gomp_task_granularity_table *task_granularity_table;
@@ -934,6 +943,7 @@ static inline struct gomp_thread *gomp_thread (void)
   return nvptx_thrs + tid;
 }
 #elif defined HAVE_TLS || defined USE_EMUTLS
+extern __thread struct gomp_thread *gomp_tls_ptr;
 extern __thread struct gomp_thread gomp_tls_data;
 static inline struct gomp_thread *gomp_thread (void)
 {
@@ -968,6 +978,226 @@ extern pthread_attr_t gomp_thread_attr;
 
 extern pthread_key_t gomp_thread_destructor;
 #endif
+
+static inline __attribute__((always_inline)) unsigned int
+gomp_count_1_bits(unsigned long long int i)
+{
+  i = i - ((i >> 1) & 0x5555555555555555ULL);
+  i = (i & 0x3333333333333333ULL) + ((i >> 2) & 0x3333333333333333ULL);
+  i = (i + (i >> 4)) & 0x0f0f0f0f0f0f0f0fULL;
+  i = i + (i >> 8);
+  i = i + (i >> 16);
+  i = i + (i >> 32);
+  return (unsigned int) (i & 0x7f);
+}
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+
+#ifndef RDTSC_32_LSB
+#define RDTSC_32_LSB() ({ \
+  unsigned int cycles_low; \
+  asm volatile ( \
+    "RDTSC\n\t" \
+    "mov %%eax, %0\n\t" \
+    : \
+    "=r" (cycles_low) \
+    : \
+    : \
+    "%rax", "%rdx" \
+  ); \
+  cycles_low; \
+})
+#endif
+
+#ifndef RDTSC
+#define RDTSC() ({ \
+  unsigned int cycles_low; \
+  unsigned int cycles_high; \
+  asm volatile ( \
+    "RDTSC\n\t" \
+    "mov %%edx, %0\n\t" \
+    "mov %%eax, %1\n\t" \
+    : \
+    "=r" (cycles_high), "=r" (cycles_low) \
+    : \
+    : \
+    "%rax", "%rdx" \
+  ); \
+  (((uint64_t) cycles_high << 32) | cycles_low); \
+})
+#endif
+
+#define RESIDUAL_TIME_THRESHOLD   44000
+
+extern __thread unsigned long long ipi_mask;
+
+
+/* The following two inlined functions help threads to send IPIs toward all the
+   other threads for which the relative bits in the IPI-mask maintained by the
+   current one are set.  Indeed, we allow to send multiple IPIs at once by relying
+   on a bitmask passed as argument to the system call.  */
+
+static inline __attribute__((always_inline))
+int ipi_syscall(unsigned long long cpus_mask)
+{
+  int ret = 0;
+
+  asm volatile
+  (
+    "syscall"
+    : "=a" (ret)
+    : "0"(134), "D"(cpus_mask)
+    : "rcx", "r11", "memory"
+  );
+
+  return ret;
+}
+
+static inline __attribute__((always_inline))
+int gomp_send_ipi(void)
+{
+  int ret = 0;
+
+  if (ipi_mask)
+  {
+    ret = ipi_syscall(ipi_mask);
+    ipi_mask = 0ULL;
+  }
+
+  return ret;
+}
+
+
+/* This function scans all threads in the pool in order to check whether some of
+   them currently maintain tasks with a priority level which is lower than that
+   passed as argument. Then, it returns a mask having a bit set if and only if
+   it represents the core-ID where the involved thread is actually pinned.
+
+   @INPUT (non of them can be NULL)
+      thr:                 the thread invoking this function
+      team:                the team to which thread belongs to
+      pool:                the pool of all threads used in this team or the others
+      priority             value against which we perform the check
+
+   @CONDITION
+      pool:                cannot be NULL  */
+
+static inline unsigned long long
+get_mask_of_threads_with_lower_priority_tasks(struct gomp_thread *thr, struct gomp_team *team,
+                              struct gomp_thread_pool *pool, int priority, bool unblocked_task)
+{
+  unsigned int i, i_start, i_circ;
+  unsigned int set_cnt = gomp_count_1_bits(ipi_mask);
+  unsigned long long mask = ipi_mask;
+
+  if (pool->threads != NULL && set_cnt < gomp_ipi_sending_cap)
+  {
+    i_start = RDTSC_32_LSB() % pool->threads_used;
+
+    for (i=0; i<pool->threads_used; i++)
+    {
+      i_circ = (i + i_start) % pool->threads_used;
+
+      if (pool->threads[i_circ] == NULL)
+        continue;
+      if (pool->threads[i_circ] == thr)
+        continue;
+      if (pool->threads[i_circ]->ts.team != team)
+        continue;
+      if ((1ULL << pool->threads[i_circ]->ts.core_id) & mask)
+        continue;
+      if (pool->threads[i_circ]->in_libgomp)
+        continue;
+      if (pool->threads[i_circ]->task == NULL)
+        continue;
+      if (pool->threads[i_circ]->task->kind == GOMP_TASK_IMPLICIT)
+        continue;
+      if (gomp_signal_unblock && unblocked_task)
+      {
+        if ((pool->threads[i_circ]->task->priority + gomp_ipi_priority_gap) > priority)
+          continue;
+      }
+      else
+      {
+        if ((pool->threads[i_circ]->task->priority + gomp_ipi_priority_gap) >= priority)
+          continue;
+      }
+      if (gomp_ipi_decision_model > 0.0)
+      {
+        if (((signed long long) gomp_get_task_time(pool->threads[i_circ]->prio_task_time, pool->threads[i_circ]->task->fn, \
+              pool->threads[i_circ]->task->kind, pool->threads[i_circ]->task->type, pool->threads[i_circ]->task->priority) - \
+                (signed long long) (RDTSC() - pool->threads[i_circ]->task->creation_time)) < RESIDUAL_TIME_THRESHOLD)
+          continue;
+      }
+
+      set_cnt = set_cnt + 1;
+      mask = mask | (1ULL << pool->threads[i_circ]->ts.core_id);
+
+      if (set_cnt >= gomp_ipi_sending_cap)
+        break;
+    }
+  }
+
+  return mask;
+}
+
+
+/* This function checks whether a certain thread is currently executing a lower
+   priority task than that provided in the 2nd argument of this function. In
+   positive case, it returns a mask with a single bit set representing the core-ID
+   where it is currently pinned the thread.
+
+   @INPUT (non of them can be NULL)
+      thr:                 the thread under evaluation
+      priority             value against which we perform the check  */
+
+static inline unsigned long long
+get_mask_single_thread_with_lower_priority_tasks(struct gomp_thread *thr, int priority, bool unblocked_task)
+{
+  unsigned int set_cnt = gomp_count_1_bits(ipi_mask);
+  unsigned long long mask = ipi_mask;
+
+  if (set_cnt < gomp_ipi_sending_cap)
+  {
+    do
+    {
+      if (thr == NULL)
+        break;
+      if ((1ULL << thr->ts.core_id) & mask)
+        break;
+      if (thr->in_libgomp)
+        break;
+      if (thr->task == NULL)
+        break;
+      if (thr->task->kind == GOMP_TASK_IMPLICIT)
+        break;
+      if (gomp_signal_unblock && unblocked_task)
+      {
+        if ((thr->task->priority + gomp_ipi_priority_gap) > priority)
+          break;
+      }
+      else
+      {
+        if ((thr->task->priority + gomp_ipi_priority_gap) >= priority)
+          break;
+      }
+      if (gomp_ipi_decision_model > 0.0)
+      {
+        if (((signed long long) gomp_get_task_time(thr->prio_task_time, thr->task->fn, thr->task->kind, thr->task->type, thr->task->priority) - \
+              (signed long long) (RDTSC() - thr->task->creation_time)) < RESIDUAL_TIME_THRESHOLD)
+          break;
+      }
+      set_cnt = set_cnt + 1;
+      mask = mask | (1ULL << thr->ts.core_id);
+    }
+    while (0);
+  }
+
+  return mask;
+}
+
+#endif
+
 
 /* Function prototypes.  */
 
@@ -1044,7 +1274,7 @@ extern void gomp_interrupt_trampoline (void);
 /* interrupt_control.c */
 
 extern int gomp_thread_interrupt_registration (void);
-extern int gomp_thread_interrupt_cancellation (void);
+extern void gomp_thread_interrupt_cancellation (void);
 
 /* task.c */
 

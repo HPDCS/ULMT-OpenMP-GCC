@@ -270,7 +270,13 @@ gomp_task_handle_blocking (struct gomp_team *team, struct gomp_task *task)
     {
       task->is_blocked = false;
       if (task->suspending_thread != NULL)
+      {
         priority_queue_unblock_task (PQ_SUSPENDED_TIED, &task->suspending_thread->tied_suspended, task);
+#if defined HAVE_TLS || defined USE_EMUTLS
+        if (gomp_ipi_var && task->suspending_thread != gomp_thread ())
+          ipi_mask = get_mask_single_thread_with_lower_priority_tasks(task->suspending_thread, task->priority, true);
+#endif
+      }
     }
     else if (!task->is_blocked && IS_BLOCKED_TIED(task))
     {
@@ -296,6 +302,14 @@ gomp_task_handle_blocking (struct gomp_team *team, struct gomp_task *task)
       task->is_blocked = false;
       if (task->suspending_thread != NULL)
         priority_queue_unblock_task (PQ_SUSPENDED_UNTIED, &task->suspending_thread->untied_suspended, task);
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var && (gomp_signal_unblock || task->priority))
+      {
+        struct gomp_thread *thr = gomp_thread ();
+        ipi_mask = get_mask_of_threads_with_lower_priority_tasks(thr, team, thr->thread_pool, task->priority, true);
+      }
+#endif
 
       ++team->task_queued_count;
       gomp_team_barrier_set_task_pending (&team->barrier);
@@ -695,6 +709,16 @@ gomp_suspend_tied_task_for_successor(struct gomp_thread *thr, struct gomp_team *
       thr->hold_team_lock = false;
       if (do_wake)
         gomp_team_barrier_wake (&team->barrier, 1);
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var && ipi_mask > 0)
+      {
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+        thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+        thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+        gomp_send_ipi();
+      }
+#endif
     }
 
     return;
@@ -796,6 +820,16 @@ gomp_suspend_untied_task_for_successor(struct gomp_thread *thr, struct gomp_team
       thr->hold_team_lock = false;
       if (do_wake)
         gomp_team_barrier_wake (&team->barrier, 1);
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var && ipi_mask > 0)
+      {
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+        thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+        thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+        gomp_send_ipi();
+      }
+#endif
     }
 
     return;
@@ -870,6 +904,11 @@ gomp_suspend_untied_task_for_successor(struct gomp_thread *thr, struct gomp_team
     priority_queue_insert (PQ_TEAM_UNTIED, &team->untied_task_queue, task, task->priority,
       INS_SUSP_TEAM_POLICY(gomp_queue_policy_var), task->parent_depends_on, task->is_blocked);
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var && task->priority)
+      ipi_mask = get_mask_of_threads_with_lower_priority_tasks(thr, team, thr->thread_pool, task->priority, false);
+#endif
+
     ++team->task_queued_count;
     gomp_team_barrier_set_task_pending (&team->barrier);
 
@@ -923,6 +962,9 @@ gomp_suspend_implicit_for_undeferred(void (*fn) (void *), void *data, void (*cpy
 
 #if _LIBGOMP_TASK_TIMING_
   undeferred->creation_time = RDTSC();
+#else
+  if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+    undeferred->creation_time = RDTSC();
 #endif
 
   undeferred->priority = (priority > implicit->priority) ? priority : implicit->priority;

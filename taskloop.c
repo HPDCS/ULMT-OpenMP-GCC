@@ -38,7 +38,9 @@ GOMP_taskloop (void (*fn) (void *), void *data, void (*cpyfn) (void *, void *),
 {
   struct gomp_thread *thr = gomp_thread ();
   struct gomp_team *team = thr->ts.team;
-
+#if defined HAVE_TLS || defined USE_EMUTLS
+  int max_priority = 0;
+#endif
 #ifdef HAVE_BROKEN_POSIX_SEMAPHORES
   /* If pthread_mutex_* is used for omp_*lock*, then each task must be
      tied to one thread all the time.  This means UNTIED tasks must be
@@ -372,9 +374,17 @@ GOMP_taskloop (void (*fn) (void *), void *data, void (*cpyfn) (void *, void *),
 		  priority_queue_insert (PQ_TEAM_UNTIED, &team->untied_task_queue,
 						task, priority, INS_NEW_TEAM_POLICY(gomp_queue_policy_var), false, false);
 		}
+#if defined HAVE_TLS || defined USE_EMUTLS
+		if (priority > max_priority)
+			max_priority = priority;
+#endif
 	  ++team->task_count;
 	  ++team->task_queued_count;
 	}
+#if defined HAVE_TLS || defined USE_EMUTLS
+	if (gomp_ipi_var && max_priority)
+		ipi_mask = get_mask_of_threads_with_lower_priority_tasks(thr, team, thr->thread_pool, max_priority, false);
+#endif
       gomp_team_barrier_set_task_pending (&team->barrier);
       if (team->task_running_count + !parent->in_tied_task
 	  < team->nthreads)
@@ -392,6 +402,16 @@ GOMP_taskloop (void (*fn) (void *), void *data, void (*cpyfn) (void *, void *),
       gomp_mutex_unlock (&team->task_lock);
       if (do_wake)
 	gomp_team_barrier_wake (&team->barrier, do_wake);
+#if defined HAVE_TLS || defined USE_EMUTLS
+	if (gomp_ipi_var && ipi_mask > 0)
+	{
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+		thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+		thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+		gomp_send_ipi();
+	}
+#endif
     }
   if ((flags & GOMP_TASK_FLAG_NOGROUP) == 0)
     ialias_call (GOMP_taskgroup_end) ();

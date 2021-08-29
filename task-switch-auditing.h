@@ -78,6 +78,9 @@ struct gomp_interrupt_task_switch_audit
   unsigned int number_of_tied_suspension_for_suspended_tied_resume;
 	unsigned int number_of_tied_suspension_for_untied_resume;
   unsigned int number_of_tied_suspension_for_suspended_untied_resume;
+  /* Such statistics are populated only if gomp_ipi_var is enabled. */
+  unsigned int number_of_ipi_syscall;
+  unsigned int number_of_ipi_sent;
 };
 
 struct gomp_voluntary_task_switch_audit
@@ -263,6 +266,8 @@ gomp_print_task_switch_audit (struct gomp_task_switch_audit **audit, unsigned nt
       local.interrupt_task_switch.number_of_tied_suspension_for_suspended_tied_resume += audit[i]->interrupt_task_switch.number_of_tied_suspension_for_suspended_tied_resume;
   		local.interrupt_task_switch.number_of_tied_suspension_for_untied_resume += audit[i]->interrupt_task_switch.number_of_tied_suspension_for_untied_resume;
       local.interrupt_task_switch.number_of_tied_suspension_for_suspended_untied_resume += audit[i]->interrupt_task_switch.number_of_tied_suspension_for_suspended_untied_resume;
+      local.interrupt_task_switch.number_of_ipi_syscall += audit[i]->interrupt_task_switch.number_of_ipi_syscall;
+      local.interrupt_task_switch.number_of_ipi_sent += audit[i]->interrupt_task_switch.number_of_ipi_sent;
 
       local.voluntary_task_switch.number_of_invocations += audit[i]->voluntary_task_switch.number_of_invocations;
       local.voluntary_task_switch.number_of_untied_suspension_for_tied_resume += audit[i]->voluntary_task_switch.number_of_untied_suspension_for_tied_resume;
@@ -358,6 +363,8 @@ gomp_print_task_switch_audit (struct gomp_task_switch_audit **audit, unsigned nt
           local.blocked_task_switch.number_of_tied_suspension_for_untied_resume,
           local.blocked_task_switch.number_of_tied_suspension_for_suspended_untied_resume);
   fprintf(file, "\n[Interrupt Task Switch]\n"
+          "Number of IPI Syscalls:                        %u\n"
+          "Number of IPIs sent:                           %u\n"
           "Number of Calls:                               %u\n"
           "Untied Suspension for Tied Resume:             %u\n"
           "Untied Suspension for Suspended Tied Resume:   %u\n"
@@ -367,6 +374,8 @@ gomp_print_task_switch_audit (struct gomp_task_switch_audit **audit, unsigned nt
           "Tied Suspension for Suspended Tied Resume:     %u\n"
           "Tied Suspension for Untied Resume:             %u\n"
           "Tied Suspension for Suspended Untied Resume:   %u\n",
+          local.interrupt_task_switch.number_of_ipi_syscall,
+          local.interrupt_task_switch.number_of_ipi_sent,
           local.interrupt_task_switch.number_of_invocations,
           local.interrupt_task_switch.number_of_untied_suspension_for_tied_resume,
           local.interrupt_task_switch.number_of_untied_suspension_for_suspended_tied_resume,

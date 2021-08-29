@@ -81,6 +81,11 @@ struct gomp_task_icv gomp_global_icv = {
 unsigned long gomp_max_active_levels_var = INT_MAX;
 bool gomp_cancel_var = false;
 bool gomp_auto_cutoff_var = true;
+bool gomp_signal_unblock = false;
+bool gomp_ipi_var = false;
+double gomp_ipi_decision_model = 0.0;
+unsigned long gomp_ipi_priority_gap = 0;
+unsigned long gomp_ipi_sending_cap = UINT_MAX;
 unsigned long gomp_ibs_rate_var = 0;
 unsigned long gomp_queue_policy_var = 0x00ffff0fUL;
 int gomp_max_task_priority_var = DEFAULT_NUM_PRIORITIES-1;
@@ -179,6 +184,42 @@ parse_schedule (void)
   gomp_error ("Invalid value for chunk size in "
 	      "environment variable OMP_SCHEDULE");
   return;
+}
+
+/* Parse a double environment variable.  Return true if one was
+   present and it was successfully parsed.  */
+
+static bool
+parse_alpha_var (const char *name, double *pvalue)
+{
+  char *env, *end;
+  double value;
+
+  env = getenv (name);
+  if (env == NULL)
+    return false;
+
+  while (isspace ((unsigned char) *env))
+    ++env;
+  if (*env == '\0')
+    goto invalid;
+
+  errno = 0;
+  value = strtod (env, &end);
+  if (errno || value >= 1.0 || value < 0.0)
+    goto invalid;
+
+  while (isspace ((unsigned char) *end))
+    ++end;
+  if (*end != '\0')
+    goto invalid;
+
+  *pvalue = value;
+  return true;
+
+ invalid:
+  gomp_error ("Invalid value for environment variable %s", name);
+  return false;
 }
 
 /* Parse an unsigned long environment variable.  Return true if one was
@@ -1184,6 +1225,16 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
 	   gomp_cancel_var ? "TRUE" : "FALSE");
   fprintf (stderr, "  OMP_AUTO_CUTOFF = '%s'\n",
      gomp_auto_cutoff_var ? "TRUE" : "FALSE");
+  fprintf (stderr, "  OMP_SIGNAL_UNBLOCK = '%s'\n",
+     gomp_signal_unblock ? "TRUE" : "FALSE");
+  fprintf (stderr, "  OMP_IPI = '%s'\n",
+     gomp_ipi_var ? "TRUE" : "FALSE");
+  fprintf (stderr, "  OMP_IPI_MODEL = '%lf'\n",
+     gomp_ipi_decision_model);
+  fprintf (stderr, "  OMP_IPI_PRIORITY_GAP = '%lu'\n",
+     gomp_ipi_priority_gap);
+  fprintf (stderr, "  OMP_IPI_SENDING_CAP = '%lu'\n",
+     gomp_ipi_sending_cap);
   fprintf (stderr, "  OMP_IBS_RATE = '%lu'\n",
      gomp_ibs_rate_var);
   fprintf (stderr, "  OMP_QUEUE_POLICY = '%lu'\n",
@@ -1227,6 +1278,11 @@ initialize_env (void)
   parse_boolean ("OMP_ULT_THREADS", &gomp_global_icv.ult_var);
   parse_boolean ("OMP_CANCELLATION", &gomp_cancel_var);
   parse_boolean ("OMP_AUTO_CUTOFF", &gomp_auto_cutoff_var);
+  parse_boolean ("OMP_SIGNAL_UNBLOCK", &gomp_signal_unblock);
+  parse_boolean ("OMP_IPI", &gomp_ipi_var);
+  parse_alpha_var ("OMP_IPI_MODEL", &gomp_ipi_decision_model);
+  parse_unsigned_long ("OMP_IPI_PRIORITY_GAP", &gomp_ipi_priority_gap, true);
+  parse_unsigned_long ("OMP_IPI_SENDING_CAP", &gomp_ipi_sending_cap, true);
   parse_unsigned_long ("OMP_IBS_RATE", &gomp_ibs_rate_var, true);
   parse_unsigned_long ("OMP_QUEUE_POLICY", &gomp_queue_policy_var, true);
   parse_stacksize ("OMP_ULT_STACK", &gomp_global_icv.ult_stack_size);

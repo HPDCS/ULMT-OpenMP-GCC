@@ -40,6 +40,17 @@ context_create_boot(struct gomp_task_context *context_caller, struct gomp_task_c
 
 			if (do_wake)
 				gomp_team_barrier_wake (&team->barrier, 1);
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+			if (gomp_ipi_var && ipi_mask > 0)
+			{
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+				thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+				thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+				gomp_send_ipi();
+			}
+#endif
 		}
 
 		if (thr->cached_state == NULL)
@@ -50,13 +61,29 @@ context_create_boot(struct gomp_task_context *context_caller, struct gomp_task_c
         thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+		if (gomp_ipi_var)
+			thr->in_libgomp = false;
+#endif
+
 		task->fn(task->fn_data);
 
 		thr = gomp_thread ();
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+		if (gomp_ipi_var)
+			thr->in_libgomp = true;
+#endif
+
 #if _LIBGOMP_TASK_TIMING_
 		task->completion_time = RDTSC();
 		gomp_save_task_time(thr->prio_task_time, task->fn, task->kind, task->type, task->priority, (task->completion_time-task->creation_time));
+#else
+		if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+		{
+			task->completion_time = RDTSC();
+			gomp_save_task_time(thr->prio_task_time, task->fn, task->kind, task->type, task->priority, (task->completion_time-task->creation_time));
+		}
 #endif
 
 #if _LIBGOMP_LIBGOMP_TIMING_

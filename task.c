@@ -84,10 +84,8 @@ gomp_init_task (struct gomp_task *task, struct gomp_task *parent_task,
   task->type = GOMP_TASK_TYPE_TIED;
   task->kind = GOMP_TASK_IMPLICIT;
   task->taskwait = NULL;
-#if _LIBGOMP_TASK_TIMING_
   task->creation_time = 0ULL;
   task->completion_time = 0ULL;
-#endif
   task->state = NULL;
   task->suspending_thread = NULL;
   task->in_tied_task = false;
@@ -326,6 +324,11 @@ GOMP_task (void (*fn) (void *), void *data, void (*cpyfn) (void *, void *),
   struct gomp_team *team = thr->ts.team;
   enum gomp_task_type task_type;
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = true;
+#endif
+
 #if _LIBGOMP_TASK_GRANULARITY_
   if (thr->task && !thr->task->icv.ult_var)
   {
@@ -359,7 +362,11 @@ GOMP_task (void (*fn) (void *), void *data, void (*cpyfn) (void *, void *),
       thr->task->stage_start = RDTSC();
 #endif
 #if _LIBGOMP_LIBGOMP_TIMING_
-  thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+    thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
 #endif
     return;
   }
@@ -388,6 +395,10 @@ undeferred_task_condition_check:
 #if _LIBGOMP_LIBGOMP_TIMING_
         thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+        if (gomp_ipi_var)
+          thr->in_libgomp = false;
+#endif
         return;
       }
 
@@ -411,6 +422,9 @@ undeferred_task_condition_check:
 
 #if _LIBGOMP_TASK_TIMING_
     task.creation_time = RDTSC();
+#else
+    if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+      task.creation_time = RDTSC();
 #endif
 
     /* If there are depend clauses and earlier deferred sibling tasks
@@ -497,6 +511,11 @@ undeferred_task_condition_check:
     thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
+#endif
+
     if (__builtin_expect (cpyfn != NULL, 0))
     {
       char buf[arg_size + arg_align - 1];
@@ -515,6 +534,11 @@ undeferred_task_condition_check:
     else
       fn (data);
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = true;
+#endif
+
 #if _LIBGOMP_LIBGOMP_TIMING_
     thr->libgomp_time->entry_time = RDTSC();
 #endif
@@ -531,6 +555,12 @@ undeferred_task_condition_check:
 #if _LIBGOMP_TASK_TIMING_
     task.completion_time = RDTSC();
     gomp_save_task_time(thr->prio_task_time, fn, task.kind, task.type, task.priority, (task.completion_time-task.creation_time));
+#else
+    if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+    {
+      task.completion_time = RDTSC();
+      gomp_save_task_time(thr->prio_task_time, fn, task.kind, task.type, task.priority, (task.completion_time-task.creation_time));
+    }
 #endif
 
     /* Access to "children" is normally done inside a task_lock
@@ -598,6 +628,9 @@ undeferred_task_condition_check:
 
 #if _LIBGOMP_TASK_TIMING_
     task->creation_time = RDTSC();
+#else
+    if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+      task->creation_time = RDTSC();
 #endif
 
     if (task->icv.ult_var)
@@ -667,6 +700,10 @@ undeferred_task_condition_check:
 #if _LIBGOMP_LIBGOMP_TIMING_
       thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var)
+        thr->in_libgomp = false;
+#endif
       return;
     }
     if (taskgroup)
@@ -693,6 +730,10 @@ undeferred_task_condition_check:
 #endif
 #if _LIBGOMP_LIBGOMP_TIMING_
         thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+        if (gomp_ipi_var)
+          thr->in_libgomp = false;
 #endif
         return;
       }
@@ -740,7 +781,7 @@ undeferred_task_condition_check:
           priority_queue_insert (PQ_TASKGROUP_TIED, &taskgroup->tied_taskgroup_queue,
                   task, task->priority, INS_NEW_GROUP_POLICY(gomp_queue_policy_var), false, false);
         priority_queue_insert (PQ_TEAM_TIED, &team->tied_task_queue,
-                task, priority, INS_NEW_TEAM_POLICY(gomp_queue_policy_var), false, false);
+                task, task->priority, INS_NEW_TEAM_POLICY(gomp_queue_policy_var), false, false);
       }
       else
       {
@@ -752,6 +793,11 @@ undeferred_task_condition_check:
         priority_queue_insert (PQ_TEAM_UNTIED, &team->untied_task_queue,
                   task, task->priority, INS_NEW_TEAM_POLICY(gomp_queue_policy_var), false, false);
       }
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var && task->priority)
+        ipi_mask = get_mask_of_threads_with_lower_priority_tasks(thr, team, thr->thread_pool, task->priority, false);
+#endif
 
       ++team->task_count;
       ++team->task_queued_count;
@@ -765,6 +811,16 @@ undeferred_task_condition_check:
       gomp_mutex_unlock (&team->task_lock);
       if (do_wake)
         gomp_team_barrier_wake (&team->barrier, 1);
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var && ipi_mask > 0)
+      {
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+        thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+        thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+        gomp_send_ipi();
+      }
+#endif
     }
   }
 #if _LIBGOMP_LIBGOMP_TIMING_
@@ -773,6 +829,10 @@ undeferred_task_condition_check:
 #if _LIBGOMP_TASK_GRANULARITY_
   if (thr->task && !thr->task->icv.ult_var)
     thr->task->stage_start = RDTSC();
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = false;
 #endif
 }
 
@@ -896,6 +956,14 @@ gomp_target_task_completion (struct gomp_team *team, struct gomp_task *task)
       gomp_sem_post (&taskgroup->taskgroup_sem);
   }
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var && task->priority)
+  {
+    struct gomp_thread *thr = gomp_thread ();
+    ipi_mask = get_mask_of_threads_with_lower_priority_tasks(thr, team, thr->thread_pool, task->priority, false);
+  }
+#endif
+
   ++team->task_queued_count;
   gomp_team_barrier_set_task_pending (&team->barrier);
   /* I'm afraid this can't be done after releasing team->task_lock,
@@ -1018,6 +1086,9 @@ gomp_create_target_task (struct gomp_device_descr *devicep,
 
 #if _LIBGOMP_TASK_TIMING_
   task->creation_time = RDTSC();
+#else
+  if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+    task->creation_time = RDTSC();
 #endif
 
   if (task->icv.ult_var)
@@ -1177,6 +1248,16 @@ gomp_create_target_task (struct gomp_device_descr *devicep,
       thr->team_lock_time->lock_time += (RDTSC() - thr->team_lock_time->entry_time);
 #endif
       gomp_mutex_unlock (&team->task_lock);
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var && ipi_mask > 0)
+      {
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+        thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+        thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+        gomp_send_ipi();
+      }
+#endif
       return true;
     }
   priority_queue_insert (PQ_CHILDREN_TIED, &parent->tied_children_queue,
@@ -1758,6 +1839,9 @@ gomp_task_run_post_handle_dependers (struct gomp_task *child_task,
   struct gomp_task *parent = child_task->parent;
   size_t i, count = child_task->dependers->n_elem, ret = 0;
   bool tied_task = (child_task->type == GOMP_TASK_TYPE_TIED);
+#if defined HAVE_TLS || defined USE_EMUTLS
+  int max_priority = 0;
+#endif
   for (i = 0; i < count; i++)
   {
     struct gomp_task *task = child_task->dependers->elem[i];
@@ -1835,10 +1919,21 @@ gomp_task_run_post_handle_dependers (struct gomp_task *child_task,
       priority_queue_insert (PQ_TEAM_UNTIED, &team->untied_task_queue,
                             task, task->priority, INS_NEW_TEAM_POLICY(gomp_queue_policy_var),
                             task->parent_depends_on, false);
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (task->priority > max_priority)
+      max_priority = task->priority;
+#endif
     ++team->task_count;
     ++team->task_queued_count;
     ++ret;
   }
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var && max_priority)
+  {
+    struct gomp_thread *thr = gomp_thread ();
+    ipi_mask = get_mask_of_threads_with_lower_priority_tasks(thr, team, thr->thread_pool, max_priority, false);
+  }
+#endif
   free (child_task->dependers);
   child_task->dependers = NULL;
   if (ret > 1)
@@ -1978,6 +2073,11 @@ gomp_barrier_handle_tasks (gomp_barrier_state_t state)
   struct gomp_task *to_free = NULL;
   int do_wake = 0;
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = true;
+#endif
+
 #if _LIBGOMP_LIBGOMP_TIMING_
   thr->libgomp_time->entry_time = RDTSC();
 #endif
@@ -2009,6 +2109,10 @@ gomp_barrier_handle_tasks (gomp_barrier_state_t state)
       gomp_team_barrier_wake (&team->barrier, 0);
 #if _LIBGOMP_LIBGOMP_TIMING_
       thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var)
+        thr->in_libgomp = false;
 #endif
       return;
     }
@@ -2064,6 +2168,16 @@ gomp_barrier_handle_tasks (gomp_barrier_state_t state)
       gomp_team_barrier_wake (&team->barrier, do_wake);
       do_wake = 0;
     }
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var && ipi_mask > 0)
+    {
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+      thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+      thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+      gomp_send_ipi();
+    }
+#endif
     if (to_free)
     {
       gomp_finish_task (to_free);
@@ -2132,10 +2246,24 @@ gomp_barrier_handle_tasks (gomp_barrier_state_t state)
 #if _LIBGOMP_LIBGOMP_TIMING_
           thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+          if (gomp_ipi_var)
+            thr->in_libgomp = false;
+#endif
           child_task->fn (child_task->fn_data);
+#if defined HAVE_TLS || defined USE_EMUTLS
+          if (gomp_ipi_var)
+            thr->in_libgomp = true;
+#endif
 #if _LIBGOMP_TASK_TIMING_
           child_task->completion_time = RDTSC();
           gomp_save_task_time(thr->prio_task_time, child_task->fn, child_task->kind, child_task->type, child_task->priority, (child_task->completion_time-child_task->creation_time));
+#else
+          if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+          {
+            child_task->completion_time = RDTSC();
+            gomp_save_task_time(thr->prio_task_time, child_task->fn, child_task->kind, child_task->type, child_task->priority, (child_task->completion_time-child_task->creation_time));
+          }
 #endif
 #if _LIBGOMP_LIBGOMP_TIMING_
           thr->libgomp_time->entry_time = RDTSC();
@@ -2170,6 +2298,10 @@ gomp_barrier_handle_tasks (gomp_barrier_state_t state)
     {
 #if _LIBGOMP_LIBGOMP_TIMING_
       thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var)
+        thr->in_libgomp = false;
 #endif
       return;
     }
@@ -2442,11 +2574,20 @@ gomp_get_runnable_tasks (struct gomp_thread *thr, struct gomp_team *team, struct
 void
 gomp_task_handle_locking (struct priority_queue *locked_tasks)
 {
-#if _LIBGOMP_TEAM_LOCK_TIMING_
+#if defined HAVE_TLS || defined USE_EMUTLS || _LIBGOMP_TEAM_LOCK_TIMING_ || _LIBGOMP_LIBGOMP_TIMING_
   struct gomp_thread *thr = gomp_thread ();
 #endif
   struct gomp_team *team = gomp_thread ()->ts.team;
   struct gomp_task *task;
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = true;
+#endif
+
+#if _LIBGOMP_LIBGOMP_TIMING_
+  thr->libgomp_time->entry_time = RDTSC();
+#endif
 
 #if _LIBGOMP_TEAM_LOCK_TIMING_
   thr->team_lock_time->entry_acquisition_time = RDTSC();
@@ -2466,6 +2607,13 @@ gomp_task_handle_locking (struct priority_queue *locked_tasks)
     thr->team_lock_time->lock_time += (RDTSC() - thr->team_lock_time->entry_time);
 #endif
     gomp_mutex_unlock (&team->task_lock);
+#if _LIBGOMP_LIBGOMP_TIMING_
+    thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
+#endif
     return;
   }
 
@@ -2475,6 +2623,13 @@ gomp_task_handle_locking (struct priority_queue *locked_tasks)
     thr->team_lock_time->lock_time += (RDTSC() - thr->team_lock_time->entry_time);
 #endif
     gomp_mutex_unlock (&team->task_lock);
+#if _LIBGOMP_LIBGOMP_TIMING_
+    thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
+#endif
     return;
   }
 
@@ -2486,7 +2641,13 @@ gomp_task_handle_locking (struct priority_queue *locked_tasks)
   {
     task->is_blocked = false;
     if (task->suspending_thread != NULL)
+    {
       priority_queue_unblock_task (PQ_SUSPENDED_TIED, &task->suspending_thread->tied_suspended, task);
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var && task->suspending_thread != thr)
+        ipi_mask = get_mask_single_thread_with_lower_priority_tasks(task->suspending_thread, task->priority, true);
+#endif
+    }
   }
   else
   {
@@ -2502,6 +2663,11 @@ gomp_task_handle_locking (struct priority_queue *locked_tasks)
     if (task->suspending_thread != NULL)
       priority_queue_unblock_task (PQ_SUSPENDED_UNTIED, &task->suspending_thread->untied_suspended, task);
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var && (gomp_signal_unblock || task->priority))
+      ipi_mask = get_mask_of_threads_with_lower_priority_tasks(thr, team, thr->thread_pool, task->priority, true);
+#endif
+
     ++team->task_queued_count;
     gomp_team_barrier_set_task_pending (&team->barrier);
     
@@ -2514,6 +2680,28 @@ gomp_task_handle_locking (struct priority_queue *locked_tasks)
 #endif
 
   gomp_mutex_unlock (&team->task_lock);
+
+#if _LIBGOMP_LIBGOMP_TIMING_
+  thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+
+  // TODO: should we use do_wake to wakeup some threads?
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var && ipi_mask > 0)
+  {
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+    thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+    thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+    gomp_send_ipi();
+  }
+#endif
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = false;
+#endif
 }
 
 /* This function is called when a task cannot access a critical section but
@@ -2551,16 +2739,43 @@ gomp_locked_task_switch (struct priority_queue *locked_tasks, gomp_mutex_t *lock
   int do_wake;
   unsigned t;
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = true;
+#endif
+
+#if _LIBGOMP_LIBGOMP_TIMING_
+  thr->libgomp_time->entry_time = RDTSC();
+#endif
+
 #if _LIBGOMP_TASK_SWITCH_AUDITING_
   thr->task_switch_audit->critical_task_switch.number_of_invocations += 1;
 #endif
 
   if (gomp_check_queues_while_locked (thr, team, task) == 0)
+  {
+#if _LIBGOMP_LIBGOMP_TIMING_
+    thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
+#endif
     return 1;
+  }
 
 #if GOMP_ATOMIC_READ_MUTEX
   if (__atomic_load_n (&team->task_lock, MEMMODEL_ACQUIRE))
+  {
+#if _LIBGOMP_LIBGOMP_TIMING_
+    thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
+#endif
     return 1;
+  }
 #endif
 
 #if _LIBGOMP_TEAM_LOCK_TIMING_
@@ -2569,8 +2784,18 @@ gomp_locked_task_switch (struct priority_queue *locked_tasks, gomp_mutex_t *lock
 
   if (gomp_mutex_trylock (&team->task_lock))
   {
-#if _LIBGOMP_TEAM_LOCK_TIMING_
+#if _LIBGOMP_TEAM_LOCK_TIMING_ && _LIBGOMP_LIBGOMP_TIMING_
+    uint64_t tmp_time = RDTSC();
+    thr->team_lock_time->lock_acquisition_time += (tmp_time - thr->team_lock_time->entry_acquisition_time);
+    thr->libgomp_time->gomp_time += (tmp_time - thr->libgomp_time->entry_time);
+#elif _LIBGOMP_TEAM_LOCK_TIMING_
     thr->team_lock_time->lock_acquisition_time += (RDTSC() - thr->team_lock_time->entry_acquisition_time);
+#elif _LIBGOMP_LIBGOMP_TIMING_
+    thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
 #endif
     return 1;
   }
@@ -2598,6 +2823,13 @@ gomp_locked_task_switch (struct priority_queue *locked_tasks, gomp_mutex_t *lock
     thr->team_lock_time->lock_time += (RDTSC() - thr->team_lock_time->entry_time);
 #endif
     gomp_mutex_unlock (&team->task_lock);
+#if _LIBGOMP_LIBGOMP_TIMING_
+    thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
+#endif
     return 2;
   }
   __atomic_store_n (&thr->non_preemptable, thr->non_preemptable-1, MEMMODEL_SEQ_CST);
@@ -2611,6 +2843,13 @@ gomp_locked_task_switch (struct priority_queue *locked_tasks, gomp_mutex_t *lock
     thr->team_lock_time->lock_time += (RDTSC() - thr->team_lock_time->entry_time);
 #endif
     gomp_mutex_unlock (&team->task_lock);
+#if _LIBGOMP_LIBGOMP_TIMING_
+    thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
+#endif
     return 1;
   }
 
@@ -2625,6 +2864,13 @@ gomp_locked_task_switch (struct priority_queue *locked_tasks, gomp_mutex_t *lock
 #endif
     gomp_mutex_unlock (&team->task_lock);
     gomp_terminate_task_post (thr, team, next_task, do_wake);
+#if _LIBGOMP_LIBGOMP_TIMING_
+    thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
+#endif
     return 1;
   }
 
@@ -2668,6 +2914,15 @@ gomp_locked_task_switch (struct priority_queue *locked_tasks, gomp_mutex_t *lock
 #endif
     gomp_suspend_untied_task_for_successor(thr, team, task, next_task, locked_tasks);
   }
+
+#if _LIBGOMP_LIBGOMP_TIMING_
+  thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = false;
+#endif
 
   return 0;
 }
@@ -2971,6 +3226,11 @@ GOMP_taskwait (void)
                         priority_queue_empty_p (&task->untied_children_queue, MEMMODEL_ACQUIRE)))
     return;
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = true;
+#endif
+
 #if _LIBGOMP_TASK_GRANULARITY_
   if (!task->icv.ult_var)
   {
@@ -3034,6 +3294,10 @@ GOMP_taskwait (void)
 #endif
 #if _LIBGOMP_LIBGOMP_TIMING_
       thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var)
+        thr->in_libgomp = false;
 #endif
       return;
     }
@@ -3127,6 +3391,16 @@ GOMP_taskwait (void)
     thr->team_lock_time->lock_time += (RDTSC() - thr->team_lock_time->entry_time);
 #endif
     gomp_mutex_unlock (&team->task_lock);
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var && ipi_mask > 0)
+    {
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+      thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+      thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+      gomp_send_ipi();
+    }
+#endif
 taskwait_resume_flow:
     if (do_wake)
     {
@@ -3184,10 +3458,24 @@ taskwait_resume_flow:
 #if _LIBGOMP_LIBGOMP_TIMING_
         thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+        if (gomp_ipi_var)
+          thr->in_libgomp = false;
+#endif
         child_task->fn (child_task->fn_data);
+#if defined HAVE_TLS || defined USE_EMUTLS
+        if (gomp_ipi_var)
+          thr->in_libgomp = true;
+#endif
 #if _LIBGOMP_TASK_TIMING_
         child_task->completion_time = RDTSC();
         gomp_save_task_time(thr->prio_task_time, child_task->fn, child_task->kind, child_task->type, child_task->priority, (child_task->completion_time-child_task->creation_time));
+#else
+        if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+        {
+          child_task->completion_time = RDTSC();
+          gomp_save_task_time(thr->prio_task_time, child_task->fn, child_task->kind, child_task->type, child_task->priority, (child_task->completion_time-child_task->creation_time));
+        }
 #endif
 #if _LIBGOMP_LIBGOMP_TIMING_
         thr->libgomp_time->entry_time = RDTSC();
@@ -3273,6 +3561,11 @@ gomp_interrupt_task_scheduling_pre (void)
   int do_wake;
   unsigned t;
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = true;
+#endif
+
 #if _LIBGOMP_LIBGOMP_TIMING_
   thr->libgomp_time->entry_time = RDTSC();
 #endif
@@ -3282,10 +3575,17 @@ gomp_interrupt_task_scheduling_pre (void)
 #endif
 
   /* HP-LIST */
-  if (task->priority < __atomic_load_n (&thr->tied_suspended.highest_priority, MEMMODEL_ACQUIRE))
-    goto interrupt_try_to_schedule;
-  if (task->priority < __atomic_load_n (&thr->untied_suspended.highest_priority, MEMMODEL_ACQUIRE))
-    goto interrupt_try_to_schedule;
+  if (gomp_signal_unblock) {
+    if (task->priority <= __atomic_load_n (&thr->tied_suspended.highest_priority, MEMMODEL_ACQUIRE))
+      goto interrupt_try_to_schedule;
+    if (task->priority <= __atomic_load_n (&thr->untied_suspended.highest_priority, MEMMODEL_ACQUIRE))
+      goto interrupt_try_to_schedule;
+  } else {
+    if (task->priority < __atomic_load_n (&thr->tied_suspended.highest_priority, MEMMODEL_ACQUIRE))
+      goto interrupt_try_to_schedule;
+    if (task->priority < __atomic_load_n (&thr->untied_suspended.highest_priority, MEMMODEL_ACQUIRE))
+      goto interrupt_try_to_schedule;
+  }
   if (thr->last_tied_task != NULL) {
     if (task->priority < __atomic_load_n (&thr->last_tied_task->tied_children_queue.highest_priority, MEMMODEL_ACQUIRE))
       goto interrupt_try_to_schedule;
@@ -3309,6 +3609,11 @@ gomp_interrupt_task_scheduling_pre (void)
   thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = false;
+#endif
+
   return;
 
 interrupt_try_to_schedule:
@@ -3319,6 +3624,10 @@ interrupt_try_to_schedule:
   {
 #if _LIBGOMP_LIBGOMP_TIMING_
     thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
 #endif
     return;
   }
@@ -3339,6 +3648,10 @@ interrupt_try_to_schedule:
 #elif _LIBGOMP_LIBGOMP_TIMING_
     thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
+#endif
     return;
   }
 
@@ -3356,7 +3669,8 @@ interrupt_try_to_schedule:
     next_task = get_not_in_taskwait_higher_priority_task (next, t);
 
   if (next_task == NULL || next_task->priority < task->priority || (next_task->priority == task->priority
-        && (task->parent_depends_on || !next_task->parent_depends_on)))
+        && (task->parent_depends_on || (gomp_signal_unblock && next_task->suspending_thread == NULL)
+          || (!gomp_signal_unblock && !next_task->parent_depends_on))))
   {
 #if _LIBGOMP_TEAM_LOCK_TIMING_
     thr->team_lock_time->lock_time += (RDTSC() - thr->team_lock_time->entry_time);
@@ -3364,6 +3678,10 @@ interrupt_try_to_schedule:
     gomp_mutex_unlock (&team->task_lock);
 #if _LIBGOMP_LIBGOMP_TIMING_
     thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
 #endif
     return;
   }
@@ -3381,6 +3699,10 @@ interrupt_try_to_schedule:
     gomp_terminate_task_post (thr, team, next_task, do_wake);
 #if _LIBGOMP_LIBGOMP_TIMING_
     thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
 #endif
     return;
   }
@@ -3414,7 +3736,6 @@ interrupt_try_to_schedule:
     if (task->taskwait && task->taskwait->in_taskwait && IS_BLOCKED_TIED(task))
     {
       /* INFO: This branch should never be kept */
-
       task->is_blocked = true;
       priority_queue_insert (PQ_SUSPENDED_TIED, &thr->tied_suspended, task, task->priority,
               /*DON'T CARE*/ PRIORITY_INSERT_BEGIN, task->parent_depends_on, task->is_blocked);
@@ -3503,6 +3824,11 @@ interrupt_try_to_schedule:
       priority_queue_insert (PQ_TEAM_UNTIED, &team->untied_task_queue, task, task->priority,
         INS_SUSP_TEAM_POLICY(gomp_queue_policy_var), task->parent_depends_on, task->is_blocked);
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var && task->priority)
+        ipi_mask = get_mask_of_threads_with_lower_priority_tasks(thr, team, thr->thread_pool, task->priority, false);
+#endif
+
       ++team->task_queued_count;
       gomp_team_barrier_set_task_pending (&team->barrier);
 
@@ -3584,11 +3910,26 @@ gomp_interrupt_task_scheduling_post (void)
       thr->hold_team_lock = false;
       if (do_wake)
         gomp_team_barrier_wake (&team->barrier, 1);
+#if defined HAVE_TLS || defined USE_EMUTLS
+      if (gomp_ipi_var && ipi_mask > 0)
+      {
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+        thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+        thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+        gomp_send_ipi();
+      }
+#endif
     }
   }
 
 #if _LIBGOMP_LIBGOMP_TIMING_
   thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = false;
 #endif
 }
 
@@ -3791,6 +4132,16 @@ gomp_task_maybe_wait_for_dependencies (void **depend)
     thr->team_lock_time->lock_time += (RDTSC() - thr->team_lock_time->entry_time);
 #endif
     gomp_mutex_unlock (&team->task_lock);
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var && ipi_mask > 0)
+    {
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+      thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+      thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+      gomp_send_ipi();
+    }
+#endif
 task_maybe_wait_resume_flow:
     if (do_wake)
     {
@@ -3848,10 +4199,24 @@ task_maybe_wait_resume_flow:
 #if _LIBGOMP_LIBGOMP_TIMING_
         thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+        if (gomp_ipi_var)
+          thr->in_libgomp = false;
+#endif
         child_task->fn (child_task->fn_data);
+#if defined HAVE_TLS || defined USE_EMUTLS
+        if (gomp_ipi_var)
+          thr->in_libgomp = true;
+#endif
 #if _LIBGOMP_TASK_TIMING_
         child_task->completion_time = RDTSC();
         gomp_save_task_time(thr->prio_task_time, child_task->fn, child_task->kind, child_task->type, child_task->priority, (child_task->completion_time-child_task->creation_time));
+#else
+        if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+        {
+          child_task->completion_time = RDTSC();
+          gomp_save_task_time(thr->prio_task_time, child_task->fn, child_task->kind, child_task->type, child_task->priority, (child_task->completion_time-child_task->creation_time));
+        }
 #endif
 #if _LIBGOMP_LIBGOMP_TIMING_
         thr->libgomp_time->entry_time = RDTSC();
@@ -3944,6 +4309,11 @@ GOMP_taskyield (void)
   if (task == NULL || team == NULL || !task->icv.ult_var)
     return;
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = true;
+#endif
+
 #if _LIBGOMP_LIBGOMP_TIMING_
   thr->libgomp_time->entry_time = RDTSC();
 #endif
@@ -3979,6 +4349,11 @@ GOMP_taskyield (void)
   thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
 
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = false;
+#endif
+
   return;
 
 taskyield_try_to_schedule:
@@ -4007,6 +4382,10 @@ taskyield_try_to_schedule:
 #if _LIBGOMP_LIBGOMP_TIMING_
     thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
+#endif
     return;
   }
 
@@ -4023,6 +4402,10 @@ taskyield_try_to_schedule:
     gomp_terminate_task_post (thr, team, next_task, do_wake);
 #if _LIBGOMP_LIBGOMP_TIMING_
     thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
 #endif
     return;
   }
@@ -4071,6 +4454,11 @@ taskyield_try_to_schedule:
 #if _LIBGOMP_LIBGOMP_TIMING_
   thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = false;
+#endif
 }
 
 void
@@ -4087,6 +4475,11 @@ GOMP_taskgroup_start (void)
      by the time GOMP_taskgroup_end is called.  */
   if (team == NULL)
     return;
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = true;
+#endif
 
 #if _LIBGOMP_LIBGOMP_TIMING_
   thr->libgomp_time->entry_time = RDTSC();
@@ -4119,6 +4512,11 @@ GOMP_taskgroup_start (void)
 #if _LIBGOMP_LIBGOMP_TIMING_
   thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = false;
+#endif
 }
 
 void
@@ -4134,6 +4532,11 @@ GOMP_taskgroup_end (void)
 
   if (team == NULL)
     return;
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = true;
+#endif
 
 #if _LIBGOMP_LIBGOMP_TIMING_
   thr->libgomp_time->entry_time = RDTSC();
@@ -4162,6 +4565,10 @@ GOMP_taskgroup_end (void)
 #endif
 #if _LIBGOMP_LIBGOMP_TIMING_
     thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
+#endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var)
+      thr->in_libgomp = false;
 #endif
     return;
   }
@@ -4311,6 +4718,16 @@ do_wait:
     thr->team_lock_time->lock_time += (RDTSC() - thr->team_lock_time->entry_time);
 #endif
     gomp_mutex_unlock (&team->task_lock);
+#if defined HAVE_TLS || defined USE_EMUTLS
+    if (gomp_ipi_var && ipi_mask > 0)
+    {
+#if _LIBGOMP_TASK_SWITCH_AUDITING_
+      thr->task_switch_audit->interrupt_task_switch.number_of_ipi_syscall += 1;
+      thr->task_switch_audit->interrupt_task_switch.number_of_ipi_sent += gomp_count_1_bits(ipi_mask);
+#endif
+      gomp_send_ipi();
+    }
+#endif
 taskgroup_end_resume_flow:
     if (do_wake)
     {
@@ -4368,10 +4785,24 @@ taskgroup_end_resume_flow:
 #if _LIBGOMP_LIBGOMP_TIMING_
         thr->libgomp_time->gomp_time += (RDTSC() - thr->libgomp_time->entry_time);
 #endif
+#if defined HAVE_TLS || defined USE_EMUTLS
+        if (gomp_ipi_var)
+          thr->in_libgomp = false;
+#endif
         child_task->fn (child_task->fn_data);
+#if defined HAVE_TLS || defined USE_EMUTLS
+        if (gomp_ipi_var)
+          thr->in_libgomp = true;
+#endif
 #if _LIBGOMP_TASK_TIMING_
         child_task->completion_time = RDTSC();
         gomp_save_task_time(thr->prio_task_time, child_task->fn, child_task->kind, child_task->type, child_task->priority, (child_task->completion_time-child_task->creation_time));
+#else
+        if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+        {
+          child_task->completion_time = RDTSC();
+          gomp_save_task_time(thr->prio_task_time, child_task->fn, child_task->kind, child_task->type, child_task->priority, (child_task->completion_time-child_task->creation_time));
+        }
 #endif
 #if _LIBGOMP_LIBGOMP_TIMING_
         thr->libgomp_time->entry_time = RDTSC();
@@ -4435,6 +4866,10 @@ taskgroup_end_resume_flow:
   task->taskgroup = taskgroup->prev;
   gomp_sem_destroy (&taskgroup->taskgroup_sem);
   free (taskgroup);
+#if defined HAVE_TLS || defined USE_EMUTLS
+  if (gomp_ipi_var)
+    thr->in_libgomp = false;
+#endif
 }
 
 int

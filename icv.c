@@ -203,10 +203,46 @@ omp_get_autocutoff (void)
   return gomp_auto_cutoff_var;
 }
 
-void
-omp_set_ibs_rate (unsigned long val)
+int
+omp_get_signal_unblock (void)
 {
-  gomp_ibs_rate_var = val;
+  return gomp_signal_unblock;
+}
+
+int
+omp_get_ipi (void)
+{
+  return gomp_ipi_var;
+}
+
+double
+omp_get_ipi_decision_model (void)
+{
+  return gomp_ipi_decision_model;
+}
+
+void
+omp_set_ipi_priority_gap (unsigned long val)
+{
+  gomp_ipi_priority_gap = val;
+}
+
+int
+omp_get_ipi_priority_gap (void)
+{
+  return gomp_ipi_priority_gap;
+}
+
+void
+omp_set_ipi_sending_cap (unsigned long val)
+{
+  gomp_ipi_sending_cap = val;
+}
+
+int
+omp_get_ipi_sending_cap (void)
+{
+  return gomp_ipi_sending_cap;
 }
 
 int
@@ -313,7 +349,13 @@ ialias (omp_set_max_active_levels)
 ialias (omp_get_max_active_levels)
 ialias (omp_get_cancellation)
 ialias (omp_get_autocutoff)
-ialias (omp_set_ibs_rate)
+ialias (omp_get_ipi)
+ialias (omp_get_ipi_decision_model)
+ialias (omp_get_signal_unblock)
+ialias (omp_set_ipi_priority_gap)
+ialias (omp_get_ipi_priority_gap)
+ialias (omp_set_ipi_sending_cap)
+ialias (omp_get_ipi_sending_cap)
 ialias (omp_get_ibs_rate)
 ialias (omp_set_queue_policy)
 ialias (omp_get_queue_policy)

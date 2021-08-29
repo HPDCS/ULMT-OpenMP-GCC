@@ -20,7 +20,13 @@ OMP_1.0 {
 	omp_get_ult_stack;
 	omp_set_text_section_addresses;
 	omp_get_autocutoff;
-	omp_set_ibs_rate;
+	omp_get_signal_unblock;
+	omp_get_ipi;
+	omp_get_ipi_decision_model;
+	omp_set_ipi_priority_gap;
+	omp_get_ipi_priority_gap;
+	omp_set_ipi_sending_cap;
+	omp_get_ipi_sending_cap;
 	omp_get_ibs_rate;
 	omp_set_queue_policy;
 	omp_get_queue_policy;

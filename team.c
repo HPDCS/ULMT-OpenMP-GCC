@@ -42,9 +42,16 @@ pthread_key_t gomp_thread_destructor;
 
 /* This is the libgomp per-thread data structure.  */
 #if defined HAVE_TLS || defined USE_EMUTLS
+__thread struct gomp_thread *gomp_tls_ptr;
 __thread struct gomp_thread gomp_tls_data;
 #else
 pthread_key_t gomp_tls_key;
+#endif
+
+
+#if defined HAVE_TLS || defined USE_EMUTLS
+/* This is the per-thread mask of IPIs to send */
+__thread unsigned long long ipi_mask;
 #endif
 
 
@@ -89,10 +96,13 @@ gomp_thread_start (void *xdata)
   void *local_data;
 
 #if defined HAVE_TLS || defined USE_EMUTLS
-  thr = &gomp_tls_data;
+  gomp_tls_ptr = &gomp_tls_data;
+  thr = gomp_tls_ptr;
+  ipi_mask = 0ULL;
 #else
   struct gomp_thread local_thr;
-  thr = &local_thr;
+  gomp_tls_ptr = &local_thr;
+  thr = gomp_tls_ptr;
   pthread_setspecific (gomp_tls_key, thr);
 #endif
   gomp_sem_init (&thr->release, 0);
@@ -110,13 +120,14 @@ gomp_thread_start (void *xdata)
   priority_queue_init (&thr->untied_suspended);
 
   thr->hold_team_lock = false;
+#if defined HAVE_TLS || defined USE_EMUTLS
+  thr->in_libgomp = false;
+#endif
   thr->non_preemptable = 0;
   thr->place = data->place;
 
-#if _LIBGOMP_TASK_TIMING_
   gomp_init_task_time (&thr->ts.team->prio_task_time[thr->ts.team_id]);
   thr->prio_task_time = thr->ts.team->prio_task_time[thr->ts.team_id];
-#endif
 
 #if _LIBGOMP_TASK_GRANULARITY_
   gomp_init_task_granularity_table (&thr->ts.team->task_granularity_table[thr->ts.team_id]);
@@ -159,7 +170,7 @@ gomp_thread_start (void *xdata)
 
     gomp_barrier_wait (&team->barrier);
 
-    if (task->icv.ult_var && gomp_ibs_rate_var > 0)
+    if (task->icv.ult_var && (gomp_ipi_var || gomp_ibs_rate_var > 0))
       gomp_thread_interrupt_registration ();
 
 #if _LIBGOMP_TEAM_TIMING_
@@ -170,7 +181,7 @@ gomp_thread_start (void *xdata)
 
     gomp_team_barrier_wait_final (&team->barrier);
 
-    if (task->icv.ult_var && gomp_ibs_rate_var > 0)
+    if (task->icv.ult_var && (gomp_ipi_var || gomp_ibs_rate_var > 0))
       gomp_thread_interrupt_cancellation ();
 
     gomp_finish_task (task);
@@ -188,7 +199,7 @@ gomp_thread_start (void *xdata)
       struct gomp_team *team = thr->ts.team;
       struct gomp_task *task = thr->task;
 
-      if (task->icv.ult_var && gomp_ibs_rate_var > 0)
+      if (task->icv.ult_var && (gomp_ipi_var || gomp_ibs_rate_var > 0))
         gomp_thread_interrupt_registration ();
 
 #if _LIBGOMP_TEAM_TIMING_
@@ -199,17 +210,15 @@ gomp_thread_start (void *xdata)
 
   	  gomp_team_barrier_wait_final (&team->barrier);
 
-      if (task->icv.ult_var && gomp_ibs_rate_var > 0)
+      if (task->icv.ult_var && (gomp_ipi_var || gomp_ibs_rate_var > 0))
         gomp_thread_interrupt_cancellation ();
 
   	  gomp_finish_task (task);
 
       gomp_simple_barrier_wait (&pool->threads_dock);
 
-#if _LIBGOMP_TASK_TIMING_
       gomp_init_task_time (&thr->ts.team->prio_task_time[thr->ts.team_id]);
       thr->prio_task_time = thr->ts.team->prio_task_time[thr->ts.team_id];
-#endif
 
 #if _LIBGOMP_TASK_GRANULARITY_
       gomp_init_task_granularity_table (&team->task_granularity_table[thr->ts.team_id]);
@@ -320,10 +329,8 @@ gomp_new_team (unsigned nthreads)
   team->ordered_release = (void *) &team->implicit_task[nthreads];
   team->ordered_release[0] = &team->master_release;
 
-#if _LIBGOMP_TASK_TIMING_
   team->prio_task_time = gomp_malloc (nthreads * sizeof(struct gomp_task_time_table *));
   memset(team->prio_task_time, 0, (nthreads * sizeof (struct gomp_task_time_table *)));
-#endif
 
 #if _LIBGOMP_TASK_GRANULARITY_
   team->task_granularity_table = gomp_malloc (nthreads * sizeof(struct gomp_task_granularity_table *));
@@ -380,12 +387,10 @@ free_team (struct gomp_team *team)
         free(team->implicit_task[i].state);
   }
 
-#if _LIBGOMP_TASK_TIMING_
   for (i = 0; i < team->nthreads; i++)
     if (team->prio_task_time[i])
       free(team->prio_task_time[i]);
   free(team->prio_task_time);
-#endif
 
 #if _LIBGOMP_TASK_GRANULARITY_
   for (i = 0; i < team->nthreads; i++)
@@ -519,7 +524,11 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   unsigned int affinity_count = 0;
   struct gomp_thread **affinity_thr = NULL;
 
-  thr = gomp_thread ();
+  gomp_tls_ptr = gomp_thread ();
+  thr = gomp_tls_ptr;
+#if defined HAVE_TLS || defined USE_EMUTLS
+  ipi_mask = 0ULL;
+#endif
   nested = thr->ts.level;
   pool = thr->thread_pool;
   task = thr->task;
@@ -536,7 +545,10 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   thr->ts.team_id = 0;
 #if defined HAVE_TLS || defined USE_EMUTLS
   thr->ts.core_id = -1;
+  thr->ts.alt_stack = NULL;
+  thr->ts.alt_stack_size = 0UL;
   thr->ts.ibs_fd = -1;
+  thr->ts.ipi_fd = -1;
 #endif
   ++thr->ts.level;
   if (nthreads > 1)
@@ -555,12 +567,13 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
   priority_queue_init (&thr->untied_suspended);
   
   thr->hold_team_lock = false;
+#if defined HAVE_TLS || defined USE_EMUTLS
+  thr->in_libgomp = false;
+#endif
   thr->non_preemptable = 0;
 
-#if _LIBGOMP_TASK_TIMING_
   gomp_init_task_time (&team->prio_task_time[0]);
   thr->prio_task_time = team->prio_task_time[0];
-#endif
 
 #if _LIBGOMP_TASK_GRANULARITY_
   gomp_init_task_granularity_table (&team->task_granularity_table[0]);
@@ -861,7 +874,10 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 	  nthr->ts.team_id = i;
 #if defined HAVE_TLS || defined USE_EMUTLS
     nthr->ts.core_id = -1;
+    nthr->ts.alt_stack = NULL;
+    nthr->ts.alt_stack_size = 0UL;
     nthr->ts.ibs_fd = -1;
+    nthr->ts.ipi_fd = -1;
 #endif
 	  nthr->ts.level = team->prev_ts.level + 1;
 	  nthr->ts.active_level = thr->ts.active_level;
@@ -1052,7 +1068,10 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
     start_data->ts.team_id = i;
 #if defined HAVE_TLS || defined USE_EMUTLS
     start_data->ts.core_id = -1;
+    start_data->ts.alt_stack = NULL;
+    start_data->ts.alt_stack_size = 0UL;
     start_data->ts.ibs_fd = -1;
+    start_data->ts.ipi_fd = -1;
 #endif
     start_data->ts.level = team->prev_ts.level + 1;
     start_data->ts.active_level = thr->ts.active_level;
@@ -1079,7 +1098,7 @@ gomp_team_start (void (*fn) (void *), void *data, unsigned nthreads,
 do_release:
   if (thr->task->icv.ult_var)
   {
-    if (gomp_ibs_rate_var > 0)
+    if (gomp_ipi_var || gomp_ibs_rate_var > 0)
       gomp_thread_interrupt_registration ();
 
     if (thr->task->state == NULL)
@@ -1169,7 +1188,7 @@ gomp_team_end (void)
   else
     gomp_fini_work_share (thr->ts.work_share);
 
-  if (thr->task->icv.ult_var && gomp_ibs_rate_var > 0)
+  if (thr->task->icv.ult_var && (gomp_ipi_var || gomp_ibs_rate_var > 0))
     gomp_thread_interrupt_cancellation ();
 
   gomp_end_task ();

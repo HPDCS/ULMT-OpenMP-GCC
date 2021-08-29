@@ -1,5 +1,3 @@
-#if _LIBGOMP_TASK_TIMING_
-
 /* Header file for tracking execution time of tasks.  */
 
 #define HTABLE_N  251ULL
@@ -67,12 +65,18 @@
 })
 #endif
 
-extern struct gomp_task_icv gomp_global_icv;
+#if _LIBGOMP_TASK_TIMING_
+extern bool gomp_ipi_var;
+#endif
+extern double gomp_ipi_decision_model;
 
 struct gomp_task_time
 {
+#if _LIBGOMP_TASK_TIMING_
 	uint64_t num;
 	uint64_t sum;
+#endif
+  double ema;
 };
 
 struct gomp_task_time_node
@@ -95,9 +99,39 @@ gomp_alloc_task_time_node (struct gomp_task_time_node *next, void (*fn) (void *)
   struct gomp_task_time_node *node = gomp_malloc_cleared (sizeof(struct gomp_task_time_node));
   node->next = next;
   node->fn = fn;
+#if _LIBGOMP_TASK_TIMING_
   node->task_time[priority][kind][type].num = occur;
   node->task_time[priority][kind][type].sum = time;
+#endif
+  node->task_time[priority][kind][type].ema = (double) time;
   return node;
+}
+
+static inline __attribute__((always_inline)) uint64_t
+gomp_get_task_time (struct gomp_task_time_table *table, void (*fn) (void *),
+                      enum gomp_task_kind kind, enum gomp_task_type type, int priority)
+{
+  uint64_t key;
+  struct gomp_task_time_node *node;
+
+  if (priority > DEFAULT_NUM_PRIORITIES)
+    priority = DEFAULT_NUM_PRIORITIES;
+  
+  key = (((((uint64_t) fn) << 4) * HTABLE_A) + HTABLE_B) % HTABLE_N;
+
+  if ((node = table->task_time_list[key]) != NULL)
+  {
+    do
+    {
+      if (node->fn == fn)
+        return (uint64_t) node->task_time[priority][kind][type].ema;
+
+      node = node->next;
+    }
+    while (node != NULL);
+  }
+
+  return (uint64_t) ~(0ULL);
 }
 
 static inline __attribute__((always_inline)) void
@@ -107,6 +141,9 @@ gomp_save_task_time (struct gomp_task_time_table *table, void (*fn) (void *),
 {
   uint64_t key;
   struct gomp_task_time_node *node;
+
+  if (priority > DEFAULT_NUM_PRIORITIES)
+    priority = DEFAULT_NUM_PRIORITIES;
   
   key = (((((uint64_t) fn) << 4) * HTABLE_A) + HTABLE_B) % HTABLE_N;
 
@@ -116,8 +153,15 @@ gomp_save_task_time (struct gomp_task_time_table *table, void (*fn) (void *),
     {
       if (node->fn == fn)
       {
+#if _LIBGOMP_TASK_TIMING_
         node->task_time[priority][kind][type].num += 1ULL;
         node->task_time[priority][kind][type].sum += time;
+        if (gomp_ipi_var && gomp_ipi_decision_model > 0.0)
+#endif
+        {
+          node->task_time[priority][kind][type].ema = (gomp_ipi_decision_model * (double) time) + \
+            ((1.0 - gomp_ipi_decision_model) * node->task_time[priority][kind][type].ema);
+        }
         return;
       }
       node = node->next;
@@ -135,6 +179,8 @@ gomp_init_task_time (struct gomp_task_time_table **table)
     (*table) = gomp_malloc (sizeof(struct gomp_task_time_table));
   memset((*table), 0, sizeof(struct gomp_task_time_table));
 }
+
+#if _LIBGOMP_TASK_TIMING_
 
 static inline __attribute__((always_inline)) void
 gomp_save_cumulative_times (struct gomp_task_time_table *table, void (*fn) (void *),
